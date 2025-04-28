@@ -1,0 +1,21 @@
+{
+    "name": "teste",
+    "config": {
+        "connector.class": "org.apache.iceberg.connect.IcebergSinkConnector",
+        "tasks.max": "1",
+        "topics": "transactions",
+        "iceberg.catalog.s3.endpoint": "http://minio:9000",
+        "iceberg.catalog.s3.secret-access-key": "minioadmin",
+        "iceberg.catalog.s3.access-key-id": "minioadmin",
+        "iceberg.catalog.s3.path-style-access": "true",
+        "iceberg.catalog.uri": "http://rest:8181",
+        "iceberg.catalog.warehouse": "s3://warehouse/",
+        "iceberg.catalog.client.region": "eu-east-1",
+        "iceberg.catalog.type": "rest",
+        "iceberg.control.commitIntervalMs": "1000",
+        "iceberg.tables": "db.transactions",
+        "iceberg.tables.auto-create-enabled": "true",
+        "iceberg.tables.evolve-schema-enabled" : "true"
+        //"iceberg.tables.default-partition-by": "days(timestamp)"
+    }
+}
