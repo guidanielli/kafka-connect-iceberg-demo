@@ -1,5 +1,5 @@
 {
-    "name": "teste",
+    "name": "teste-iceberg-3",
     "config": {
         "connector.class": "org.apache.iceberg.connect.IcebergSinkConnector",
         "tasks.max": "1",
@@ -9,13 +9,15 @@
         "iceberg.catalog.s3.access-key-id": "minioadmin",
         "iceberg.catalog.s3.path-style-access": "true",
         "iceberg.catalog.uri": "http://rest:8181",
-        "iceberg.catalog.warehouse": "s3://warehouse/",
+        "iceberg.catalog.warehouse": "s3a://warehouse/",
         "iceberg.catalog.client.region": "eu-east-1",
         "iceberg.catalog.type": "rest",
-        "iceberg.control.commitIntervalMs": "1000",
-        "iceberg.tables": "db.transactions",
+        "iceberg.tables": "db.transactions_3",
         "iceberg.tables.auto-create-enabled": "true",
-        "iceberg.tables.evolve-schema-enabled" : "true"
-        //"iceberg.tables.default-partition-by": "days(timestamp)"
+        "iceberg.tables.evolve-schema-enabled": "true",
+        "iceberg.control.commit.interval-ms": "1000",
+        "consumer.override.auto.offset.reset": "earliest",
+        "iceberg.tables.default-partition-by": "transaction_type"
+
     }
 }

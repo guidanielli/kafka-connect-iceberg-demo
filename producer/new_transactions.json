@@ -1,0 +1,8 @@
+{
+    "id": 10000,
+    "customer_name": "Paul Huber New Man",
+    "amount": 109.05,
+    "transaction_type": "purchase",
+    "new_string_field": "supernewvaluesandstuff",
+    "timestamp": "2025-04-26T13:47:49"
+}

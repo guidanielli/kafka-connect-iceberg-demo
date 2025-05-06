@@ -28,8 +28,6 @@ services:
       - "9092:9092"
       - "29092:29092"
       - "9999:9999"
-    volumes:
-      - ../examples/:/etc/examples
     environment:
       KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:19092,EXTERNAL://${DOCKER_HOST_IP:-127.0.0.1}:9092,DOCKER://host.docker.internal:29092
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,DOCKER:PLAINTEXT
@@ -96,6 +94,7 @@ services:
       CONNECT_ZOOKEEPER_CONNECT: 'zookeeper:2181'
       CONNECT_PLUGIN_PATH: '/etc/kafka-connect/jars/'
       CONTROL_CENTER_INTERNAL: "control-center:9021"
+      CONNECT_AUTO_RESET_OFFSET: "earliest"
     volumes:
       - ./kafka-connect-plugins/distributions:/etc/kafka-connect/jars
     networks:
@@ -217,7 +216,6 @@ services:
       CATALOG_S3_ENDPOINT: http://minio:9000
       CATALOG_S3_PATH__STYLE__ACCESS: True
 
-
 ### PYTHON KAFKA PRODUCER ###
   python-producer:
     build:
@@ -243,6 +241,21 @@ services:
       - kafka-schema-registry
       - control-center
       - minio
+
+
+  trino:
+    image: trinodb/trino:445
+    hostname: trino
+    container_name: trino
+    depends_on:
+      - rest
+      - minio
+    ports:
+      - "8080:8080"
+    networks:
+      - kafka-connect-net
+    volumes:
+      - ./trino-config/etc/trino/catalog:/etc/trino/catalog
 
   # prometheus:
   #   image: prom/prometheus

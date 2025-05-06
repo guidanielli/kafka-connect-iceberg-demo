@@ -20,10 +20,6 @@
       "type": "string"
     },
     {
-      "name": "new_string_field",
-      "type": "string"
-    },
-    {
       "name": "timestamp",
       "type": "string"
     }
