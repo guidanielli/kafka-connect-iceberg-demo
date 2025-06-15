@@ -29,17 +29,17 @@ services:
       - "29092:29092"
       - "9999:9999"
     environment:
-      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:19092,EXTERNAL://${DOCKER_HOST_IP:-127.0.0.1}:9092,DOCKER://host.docker.internal:29092
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:19092,EXTERNAL://${DOCKER_HOST_IP}:9092,DOCKER://host.docker.internal:29092
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,DOCKER:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
-      KAFKA_ZOOKEEPER_CONNECT: "zookeeper:2181"
+      KAFKA_ZOOKEEPER_CONNECT: "${ZOOKEEPER_CONNECT}"
       KAFKA_BROKER_ID: 1
       KAFKA_LOG4J_LOGGERS: "kafka.controller=INFO,kafka.producer.async.DefaultEventHandler=INFO,state.change.logger=INFO"
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_JMX_PORT: 9001
-      KAFKA_JMX_HOSTNAME: ${DOCKER_HOST_IP:-127.0.0.1}
+      KAFKA_JMX_HOSTNAME: ${DOCKER_HOST_IP}
       KAFKA_AUTHORIZER_CLASS_NAME: kafka.security.authorizer.AclAuthorizer
       KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: "true"
     depends_on:
@@ -54,7 +54,7 @@ services:
     ports:
       - "8081:8081"
     environment:
-      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: PLAINTEXT://kafka:19092
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: PLAINTEXT://${kafka}:19092
       SCHEMA_REGISTRY_HOST_NAME: kafka-schema-registry
       SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
     depends_on:
@@ -63,7 +63,6 @@ services:
     networks:
       - kafka-connect-net
 
-    
   connect:
     image: confluentinc/cp-kafka-connect:7.6.4
     hostname: connect
@@ -75,7 +74,7 @@ services:
     ports:
       - "8083:8083"
     environment:
-      CONNECT_BOOTSTRAP_SERVERS: 'kafka:19092'
+      CONNECT_BOOTSTRAP_SERVERS: '${KAFKA_BOOTSTRAP_SERVERS}'
       CONNECT_REST_PORT: 8083
       CONNECT_REST_ADVERTISED_HOST_NAME: connect 
       CONNECT_GROUP_ID: connect-iceberg-group
@@ -86,113 +85,74 @@ services:
       CONNECT_STATUS_STORAGE_TOPIC: iceberg-connect-status
       CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: 1
       CONNECT_KEY_CONVERTER: io.confluent.connect.avro.AvroConverter
-      CONNECT_KEY_CONVERTER_SCHEMA_REGISTRY_URL: 'http://kafka-schema-registry:8081'
+      CONNECT_KEY_CONVERTER_SCHEMA_REGISTRY_URL: '${SCHEMA_REGISTRY_URL}'
       CONNECT_VALUE_CONVERTER: io.confluent.connect.avro.AvroConverter
-      CONNECT_VALUE_CONVERTER_SCHEMA_REGISTRY_URL: 'http://kafka-schema-registry:8081'
+      CONNECT_VALUE_CONVERTER_SCHEMA_REGISTRY_URL: '${SCHEMA_REGISTRY_URL}'
       CONNECT_INTERNAL_KEY_CONVERTER: org.apache.kafka.connect.json.JsonConverter
       CONNECT_INTERNAL_VALUE_CONVERTER: org.apache.kafka.connect.json.JsonConverter
-      CONNECT_ZOOKEEPER_CONNECT: 'zookeeper:2181'
+      CONNECT_ZOOKEEPER_CONNECT: '${ZOOKEEPER_CONNECT}'
       CONNECT_PLUGIN_PATH: '/etc/kafka-connect/jars/'
       CONTROL_CENTER_INTERNAL: "control-center:9021"
-      CONNECT_AUTO_RESET_OFFSET: "earliest"
+      CONNECT_AUTO_RESET_OFFSET: "latest"
     volumes:
-      - ./kafka-connect-plugins/distributions:/etc/kafka-connect/jars
+      - ./iceberg-sink-plugin/distributions:/etc/kafka-connect/jars
     networks:
       - kafka-connect-net
 
-  ksqldb-server:
-    image: confluentinc/cp-ksqldb-server:7.6.4
-    hostname: ksqldb-server
-    container_name: ksqldb-server
+### APACHE ICEBERG CONFIGURATION ###
+  spark-iceberg:
+    container_name: spark-iceberg
+    build:
+      context: ./spark
+    image: spark-iceberg:latest
+    networks:
+      - kafka-connect-net
     depends_on:
-      - kafka
-      - kafka-schema-registry
-      - connect
-    ports:
-      - "8088:8088"
+      - rest
+      - minio
+    volumes:
+      - ./spark/warehouse:/home/iceberg/warehouse
+      - ./spark/notebooks:/home/iceberg/notebooks/notebooks
+      - ./spark/connectors:/home/iceberg/notebooks/connectors
     environment:
-      KSQL_CONFIG_DIR: "/etc/ksql"
-      KSQL_BOOTSTRAP_SERVERS: "kafka:19092"
-      KSQL_HOST_NAME: ksqldb-server
-      KSQL_LISTENERS: "http://0.0.0.0:8088"
-      KSQL_CACHE_MAX_BYTES_BUFFERING: 0
-      KSQL_KSQL_SCHEMA_REGISTRY_URL: "http://kafka-schema-registry:8081"
-      KSQL_PRODUCER_INTERCEPTOR_CLASSES: "io.confluent.monitoring.clients.interceptor.MonitoringProducerInterceptor"
-      KSQL_CONSUMER_INTERCEPTOR_CLASSES: "io.confluent.monitoring.clients.interceptor.MonitoringConsumerInterceptor"
-      KSQL_KSQL_CONNECT_URL: "http://connect:8083"
-      KSQL_KSQL_LOGGING_PROCESSING_TOPIC_REPLICATION_FACTOR: 1
-      KSQL_KSQL_LOGGING_PROCESSING_TOPIC_AUTO_CREATE: 'true'
-      KSQL_KSQL_LOGGING_PROCESSING_STREAM_AUTO_CREATE: 'true'
-    networks:
-      - kafka-connect-net
-
-  ksqldb-cli:
-    image: confluentinc/cp-ksqldb-cli:7.6.4
-    container_name: ksqldb-cli
-    depends_on:
-      - kafka
-      - ksqldb-server
-    entrypoint: /bin/sh
-    tty: true
-    networks:
-      - kafka-connect-net
-
-  control-center:
-    image: confluentinc/cp-enterprise-control-center:7.6.4
-    hostname: control-center
-    container_name: control-center
-    depends_on:
-      - kafka
-      - kafka-schema-registry
-      - connect
-      - ksqldb-server
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION=${AWS_REGION}
     ports:
-      - "9021:9021"
-    environment:
-      CONTROL_CENTER_BOOTSTRAP_SERVERS: 'kafka:19092'
-      CONTROL_CENTER_CONNECT_CONNECT-DEFAULT_CLUSTER: 'connect:8083'
-      CONTROL_CENTER_CONNECT_HEALTHCHECK_ENDPOINT: '/connectors'
-      CONTROL_CENTER_KSQL_KSQLDB1_URL: "http://ksqldb-server:8088"
-      CONTROL_CENTER_KAFKA_CONNECT: "http://connect:8083" 
-      CONTROL_CENTER_KSQL_KSQLDB1_ADVERTISED_URL: "http://localhost:8088"
-      CONTROL_CENTER_SCHEMA_REGISTRY_URL: "http://kafka-schema-registry:8081"
-      CONTROL_CENTER_REPLICATION_FACTOR: 1
-      CONTROL_CENTER_INTERNAL_TOPICS_PARTITIONS: 1
-      CONTROL_CENTER_MONITORING_INTERCEPTOR_TOPIC_PARTITIONS: 1
-      CONFLUENT_METRICS_TOPIC_REPLICATION: 1
-      PORT: 9021
-    networks:
-      - kafka-connect-net
-
+      - 8888:8888
+      - 8080:8080
+      - 10000:10000
+      - 10001:10001
 
 ### MINIO CONFIGURATION ###
-
   minio:
     image: minio/minio
     hostname: minio
     container_name: minio
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_ROOT_USER: ${AWS_ACCESS_KEY_ID}
+      MINIO_ROOT_PASSWORD: ${AWS_SECRET_ACCESS_KEY}
       MINIO_DOMAIN: minio
     networks:
       - kafka-connect-net
+    volumes:
+      - ./data/minio:/data
     ports:
       - 9001:9001
       - 9000:9000
     command: ["server", "/data", "--console-address", ":9001"]
 
-#### AWS CLI CREATE BUCKET ####
+### AWS CLI CREATE BUCKET ###
   aws:
     image: amazon/aws-cli
     container_name: aws-cli
     command: |
       -c "sleep 5 && \
-      aws --endpoint-url http://minio:9000 s3 mb s3://warehouse --region us-east-1 || exit 0"
+      aws --endpoint-url http://minio:9000 s3 mb s3://warehouse --region ${AWS_REGION} || exit 0"
     entrypoint: [/bin/bash]
     environment: 
-      AWS_ACCESS_KEY_ID: "minioadmin"
-      AWS_SECRET_ACCESS_KEY: "minioadmin"
+      AWS_ACCESS_KEY_ID: "${AWS_ACCESS_KEY_ID}"
+      AWS_SECRET_ACCESS_KEY: "${AWS_SECRET_ACCESS_KEY}"
     networks:
       - kafka-connect-net
     depends_on: 
@@ -205,57 +165,51 @@ services:
     container_name: rest
     networks:
       - kafka-connect-net
+    volumes:
+      - ./data/iceberg-rest:/var/lib/iceberg-rest
     ports:
       - 8181:8181
     environment:
-      AWS_ACCESS_KEY_ID: minioadmin
-      AWS_SECRET_ACCESS_KEY: minioadmin
-      AWS_REGION: us-east-1
-      CATALOG_WAREHOUSE: s3://warehouse/
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_REGION: ${AWS_REGION}
+      CATALOG_WAREHOUSE: ${CATALOG_WAREHOUSE}
       CATALOG_IO__IMPL: org.apache.iceberg.aws.s3.S3FileIO
-      CATALOG_S3_ENDPOINT: http://minio:9000
-      CATALOG_S3_PATH__STYLE__ACCESS: True
+      CATALOG_S3_ENDPOINT: ${CATALOG_S3_ENDPOINT}
+      CATALOG_S3_PATH__STYLE__ACCESS: ${CATALOG_S3_PATH_STYLE_ACCESS}
 
-### PYTHON KAFKA PRODUCER ###
-  python-producer:
+### PRODUCER SERVICE ###
+  producer:
     build:
-      context: ./producer
-      dockerfile: Dockerfile.producer
+      context: ./producer-kafka
     container_name: producer
-    environment:
-      BOOTSTRAP_SERVERS: kafka:19092
-      SCHEMA_REGISTRY_URL: http://kafka-schema-registry:8081
-    command: 
-      - bash 
-      - -c 
-      - |
-        #
-        sleep 15 &&
-        echo "Initializing producer..." &&
-        python producer.py && 
-        sleep infinity
-    networks:
-      - kafka-connect-net
     depends_on:
       - kafka
       - kafka-schema-registry
-      - control-center
-      - minio
-
-
-  trino:
-    image: trinodb/trino:445
-    hostname: trino
-    container_name: trino
-    depends_on:
-      - rest
-      - minio
-    ports:
-      - "8080:8080"
+    environment:
+      - BOOTSTRAP_SERVERS=${KAFKA_BOOTSTRAP_SERVERS}
+      - SCHEMA_REGISTRY_URL=${SCHEMA_REGISTRY_URL}
+      - NUMBER_MESSAGES=${NUMBER_MESSAGES}
+      - TOPIC=${TOPIC}
     networks:
       - kafka-connect-net
-    volumes:
-      - ./trino-config/etc/trino/catalog:/etc/trino/catalog
+
+
+
+
+  # trino:
+  #   image: trinodb/trino:445
+  #   hostname: trino
+  #   container_name: trino
+  #   depends_on:
+  #     - rest
+  #     - minio
+  #   ports:
+  #     - "8080:8080"
+  #   networks:
+  #     - kafka-connect-net
+  #   volumes:
+  #     - ./trino-config/etc/trino/catalog:/etc/trino/catalog
 
   # prometheus:
   #   image: prom/prometheus
